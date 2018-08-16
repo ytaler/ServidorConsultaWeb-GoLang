@@ -16,19 +16,8 @@ import (
   //"bytes"
 )
 
-// Mail a ecogas
-// * Consulta de existencia de comprobante
-// http://10.2.1.221:8082/balance/consulta.php?p=0210&d=00297381&c=140692&t=cen&e=1
-// * Extracción de comprobante:
-// http://10.2.1.221:8082/balance/balance.php?d=00297381&p=0210&c=140692&t=cen&o=si
-// d --> cuenta
-// p --> prefijo
-// c --> cuenta
-// t --> distribuidora: cen/cuy
-// e --> existe: 1/0
-// o --> observaciones: nof=no lleva fondo, resto con fondo.
-
 // http://localhost:8082/balance/balance.php?d=32541040&p=0001&c=12345678&t=cen&o=si
+// http://192.168.1.25:8082/balance/balance.php?d=32541040&p=0001&c=12345678&t=cen&o=si
 
 // Consulta PPRESS
 // http://192.168.1.230:8081/prueba?nombre=Cordobesa.pdf&pagina=300&periodo=2018\08\&ruta=PDF\&servidor=\\192.168.1.230\
@@ -39,7 +28,7 @@ var (
   port     *int = flag.Int("port", 1433, "DB port")
   server        = flag.String("server", "192.168.1.250\\SQLDOXER", "DB server")
   user          = flag.String("user", "sa", "DB user")
-  database      = flag.String("database", "Eco-2018", "DB name")
+  database      = flag.String("database", "Dx_Indices", "DB name")
   bolilla  *int = flag.Int("bollila", 1, "Bolilla inicial")
   conn *sql.DB
   err error
@@ -48,12 +37,21 @@ var (
 )
 
 var pathBalance = regexp.MustCompile("^/(balance/balance.php)$")
-var pathConsulta = regexp.MustCompile("^/(balance/consulta.php)$")
+var pathConsulta = regexp.MustCompile("^/(consulta/consulta.php)$")
+
+// * Extracción de comprobante:
+// http://10.2.1.221:8082/balance/balance.php?d=00297381&p=0210&c=140692&t=cen&o=si
+// http://192.168.1.25:8082/balance/balance.php?d=32541040&p=0001&c=12345678&t=cen&o=si
+// d --> cuenta
+// p --> prefijo
+// c --> cuenta
+// t --> distribuidora: cen/cuy
+// o --> observaciones: nof=no lleva fondo, resto con fondo.
 
 func balanceador(w http.ResponseWriter, r *http.Request) {
   //fmt.Fprintf(w, "<html><head><title>Servicio de consulta masiva de comprobantes</title></head></html>")
   if *debug {
-    fmt.Printf("Hora inicio: %s\n",time.Now())
+    fmt.Printf("****************************************************************************************************\nHora inicio balance: %s\n",time.Now())
   }
 
   consultaBase := url.Values{}
@@ -84,7 +82,8 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   // COLUMNAS BASE
   // servidor,ruta,distribuidora,preriodo,nombre_archivo,prefijo_comp,numero_comp,tipo_comp,fomulario,numero_cta,pagina,time_factura
-  query := "select servidor, ruta, preriodo, nombre_archivo, pagina from Indices where prefijo_comp='"+ consultaBase.Get("prefijoComprobante") +"' and numero_comp='"+ consultaBase.Get("numeroComprobante") +"' and distribuidora='" + consultaBase.Get("distribuidoraComprobante") + "'"
+  //query := "select servidor, ruta, preriodo, nombre_archivo, pagina from Indices where prefijo_comp='"+ consultaBase.Get("prefijoComprobante") +"' and numero_comp='"+ consultaBase.Get("numeroComprobante") +"' and distribuidora='" + consultaBase.Get("distribuidoraComprobante") + "'"
+  query := "Exec ExtraePDF '" + consultaBase.Get("prefijoComprobante") + "','" + consultaBase.Get("numeroComprobante") + "','" + consultaBase.Get("cuentaComprobante") + "','" + consultaBase.Get("distribuidoraComprobante") + "'"
   if *debug {
     fmt.Printf("Consulta: %s\n",query)
   }
@@ -106,11 +105,18 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   var servidor string
   var ruta string
+  var distribuidora string
   var periodo string
   var nombre string
+  var prefijo_comp string
+  var numero_comp string
+  var tipo_comp string
+  var fomulario string
+  var numero_cta string
   var pagina int
+  var time_factura string
   
-  err = row.Scan(&servidor, &ruta, &periodo, &nombre, &pagina)
+  err = row.Scan(&servidor, &ruta, &distribuidora, &periodo, &nombre, &prefijo_comp, &numero_comp, &tipo_comp, &fomulario, &numero_cta, &pagina, &time_factura)
   if err != nil {
     //log.Fatal("Scan failed:", err.Error())
     http.NotFound(w, r)
@@ -135,7 +141,7 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
     // consultaBase["cuentaComprobante"] <--> r.FormValue("c")
     // consultaBase["distribuidoraComprobante"] <--> r.FormValue("t") / cen (c)- cuy (y)
     // consultaBase["observacionesComprobante"] <--> r.FormValue("o")
-    fmt.Printf("Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, observaciones=%s, bolilla=%d\n", consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("distribuidoraComprobante"), *bolilla)
+    fmt.Printf("Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, observaciones=%s, bolilla=%d\n", consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("observacionesComprobante"), *bolilla)
     // resultadoBase["servidor"] <--> servidor
     // resultadoBase["ruta"] <--> ruta
     // resultadoBase["periodo"] <--> periodo
@@ -180,8 +186,105 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
     *bolilla = 1
   }
   if *debug {
-    fmt.Printf("Hora finalizacion: %s\n",time.Now())
+    fmt.Printf("Hora finalizacion balance: %s\n",time.Now())
   }
+}
+
+// * Consulta de existencia de comprobante
+// http://10.2.1.221:8082/balance/consulta.php?p=0210&d=00297381&c=140692&t=cen&e=1
+// http://192.168.1.25:8082/consulta/consulta.php?d=32541040&p=0001&c=12345678&t=cen&e=1
+// d --> cuenta
+// p --> prefijo
+// c --> cuenta
+// t --> distribuidora: cen/cuy
+// e --> existe: 1/0
+
+func consultador(w http.ResponseWriter, r *http.Request) {
+  //fmt.Fprintf(w, "<html><head><title>Servicio de consulta masiva de comprobantes</title></head></html>")
+  if *debug {
+    fmt.Printf("****************************************************************************************************\nHora inicio consulta: %s\n",time.Now())
+  }
+
+  consultaBase := url.Values{}
+
+  // verificacion de path url, si no es corecto, retorna http 403
+  m := pathConsulta.FindStringSubmatch(r.URL.Path)
+  //print(r.URL.Path)
+  if m == nil {
+    http.NotFound(w, r)
+    fmt.Printf(" BAD REQUEST - Path=%s - bolilla=%d", r.URL.Path, *bolilla)
+    r.ParseForm()
+    for key, values := range r.Form {
+      fmt.Printf(" - %s: %s", key,values)
+    }
+    print("\n")
+    return
+  }
+
+  consultaBase.Set("numeroComprobante",r.FormValue("d"))
+  consultaBase.Set("prefijoComprobante",r.FormValue("p"))
+  consultaBase.Set("cuentaComprobante",r.FormValue("c"))
+  if r.FormValue("t") == "cen"{
+  	consultaBase.Set("distribuidoraComprobante","C")
+  }else{
+  	consultaBase.Set("distribuidoraComprobante","Y")
+  }
+  consultaBase.Set("existeComprobante",r.FormValue("e"))
+
+  // COLUMNAS BASE
+  // servidor,ruta,distribuidora,preriodo,nombre_archivo,prefijo_comp,numero_comp,tipo_comp,fomulario,numero_cta,pagina,time_factura
+  query := "Exec ConsultaExiste '"+ consultaBase.Get("prefijoComprobante") +"','"+ consultaBase.Get("numeroComprobante") +"','"+ consultaBase.Get("cuentaComprobante") +"','" + consultaBase.Get("distribuidoraComprobante") + "'"
+  if *debug {
+    fmt.Printf("Consulta: %s\n",query)
+  }
+  stmt, err := conn.Prepare(query)
+  if err != nil {
+    //log.Fatal("Prepare failed:", err.Error())
+    http.NotFound(w, r)
+    fmt.Printf(" Error al preparar query SQL - Path=%s - bolilla=%d", r.URL.Path, *bolilla)
+    r.ParseForm()
+    for key, values := range r.Form {
+      fmt.Printf(" - %s: %s", key,values)
+    }
+    print("\n")
+    return
+  }
+  defer stmt.Close()
+
+  row := stmt.QueryRow()
+
+  var respuesta string
+  
+  err = row.Scan(&respuesta)
+  if err != nil {
+    //log.Fatal("Scan failed:", err.Error())
+    http.NotFound(w, r)
+    fmt.Printf(" Error al parsear resultado query SQL - Path=%s - bolilla=%d", r.URL.Path, *bolilla)
+    r.ParseForm()
+    for key, values := range r.Form {
+      fmt.Printf(" - %s: %s", key,values)
+    }
+    print("\n")
+    return
+  }
+
+  if *debug {
+    // consultaBase["numeroComprobante"] <--> r.FormValue("d")
+    // consultaBase["prefijoComprobante"] <--> r.FormValue("p")
+    // consultaBase["cuentaComprobante"] <--> r.FormValue("c")
+    // consultaBase["distribuidoraComprobante"] <--> r.FormValue("t") / cen (c)- cuy (y)
+    // consultaBase["observacionesComprobante"] <--> r.FormValue("o")
+    fmt.Printf("Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, existe=%s, bolilla=%d\n", consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("existeComprobante"), *bolilla)
+    // resultadoBase["servidor"] <--> servidor
+    fmt.Printf("Datos Base: respuesta=%s\n", respuesta)
+  }
+
+  //w.Write([]byte("<html><head><title>Sistema de consulta</title></head><body><h1>HOLA QUE TAL</h1></body></html>"))
+  w.Write([]byte(respuesta))
+  if *debug {
+    fmt.Printf("Hora finalizacion consulta: %s\n",time.Now())
+  }
+
 }
 
 func main() {
@@ -189,7 +292,7 @@ func main() {
   flag.Parse()
 
   if *debug {
-    fmt.Printf(" password:%s\n", *password)
+    fmt.Printf("****************************************************************************************************\n password:%s\n", *password)
     fmt.Printf(" port:%d\n", *port)
     fmt.Printf(" server:%s\n", *server)
     fmt.Printf(" user:%s\n", *user)
@@ -217,6 +320,7 @@ func main() {
   // fin workaround
   
   http.HandleFunc("/balance/", balanceador)
+  http.HandleFunc("/consulta/", consultador)
   if err := http.ListenAndServe(puertoHttp, nil); err != nil {
     panic(err)
   }
