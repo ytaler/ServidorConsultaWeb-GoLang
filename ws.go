@@ -28,13 +28,13 @@ import (
 // http://192.168.1.230:8081/prueba?nombre=Cordobesa.pdf&pagina=300&periodo=2018\08\&ruta=PDF\&servidor=\\192.168.1.230\
 
 var (
-	debug         = flag.Bool("debug", false, "Habilitar depuracion")
-	password      = flag.String("password", "Doxer2018.,", "DB password")
-	port     *int = flag.Int("port", 1433, "DB port")
-	server        = flag.String("server", "192.168.1.250\\SQLDOXER", "DB server")
-	user          = flag.String("user", "sa", "DB user")
-	database      = flag.String("database", "Eco-2018", "DB name")
-	bolilla  *int = flag.Int("bollila", 1, "Bolilla inicial")
+  debug         = flag.Bool("debug", false, "Habilitar depuracion")
+  password      = flag.String("password", "Doxer2018.,", "DB password")
+  port     *int = flag.Int("port", 1433, "DB port")
+  server        = flag.String("server", "192.168.1.250\\SQLDOXER", "DB server")
+  user          = flag.String("user", "sa", "DB user")
+  database      = flag.String("database", "Eco-2018", "DB name")
+  bolilla  *int = flag.Int("bollila", 1, "Bolilla inicial")
   conn *sql.DB
   err error
   servidorPPress= "http://192.168.1.230:8081/prueba"
@@ -71,7 +71,9 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   //debug := "Parametros recibidos: " + consultaBase.Get("numeroComprobante") + " " + consultaBase.Get("prefijoComprobante") + " " + consultaBase.Get("tipoComprobante") + " - Bolilla " + fmt.Sprintf("%d",bolilla)
 
-  query := "select servidor, ruta, preriodo, nombre_archivo, pagina from Indices where prefijo_comp='"+ consultaBase.Get("prefijoComprobante") +"' and numero_comp='"+ consultaBase.Get("numeroComprobante") +"' and tipo_comp='" + consultaBase.Get("tipoComprobante") + "'"
+  // COLUMNAS BASE
+  // servidor,ruta,distribuidora,preriodo,nombre_archivo,prefijo_comp,numero_comp,tipo_comp,fomulario,numero_cta,pagina,time_factura
+  query := "select servidor, ruta, distribuidora, preriodo, nombre_archivo, numero_cta, pagina from Indices where prefijo_comp='"+ consultaBase.Get("prefijoComprobante") +"' and numero_comp='"+ consultaBase.Get("numeroComprobante") +"' and tipo_comp='" + consultaBase.Get("tipoComprobante") + "'"
   //query := "select servidor, ruta, preriodo, nombre_archivo from Indices where prefijo_comp='0216' and numero_comp='00033824' and tipo_comp='A'"
   //print(query)
   stmt, err := conn.Prepare(query)
@@ -92,10 +94,13 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   var servidor string
   var ruta string
+  var distribuidora string
   var periodo string
   var nombre string
+  var cuenta string
   var pagina int
-  err = row.Scan(&servidor, &ruta, &periodo, &nombre, &pagina)
+  
+  err = row.Scan(&servidor, &ruta, &distribuidora, &periodo, &nombre, &cuenta, &pagina)
   if err != nil {
     //log.Fatal("Scan failed:", err.Error())
     http.NotFound(w, r)
@@ -110,8 +115,14 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   resultadoBase.Set("servidor",servidor)
   resultadoBase.Set("ruta",ruta)
+  if distribuidora == "C"{
+  	resultadoBase.Set("distribuidora","cen")
+  }else{
+	resultadoBase.Set("distribuidora","cuy")
+  }
   resultadoBase.Set("periodo",periodo)
   resultadoBase.Set("nombre",nombre)
+  resultadoBase.Set("cuenta",cuenta)
   resultadoBase.Set("pagina",strconv.Itoa(pagina))
 
   if *debug {
@@ -122,7 +133,7 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   if resp.StatusCode != 200{
     http.NotFound(w, r)
-    fmt.Printf(" Error comunicarse con PPress - Path=%s - bolilla=%d", r.URL.Path, *bolilla)
+    fmt.Printf(" Error de comunicacion con PPress - Path=%s - bolilla=%d", r.URL.Path, *bolilla)
     r.ParseForm()
     for key, values := range r.Form {
       fmt.Printf(" - %s: %s", key,values)
@@ -131,8 +142,16 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
     return
   }
 
+  // FORMATO DE NOMBRE
+  // fact-ecogas-pppp-DDDDDDDD-CCCCCCCC-xxx.pdf
+  // pppp es punto de venta (prefijo)
+  // DDDDDDDD es numero de factura (numero)
+  // CCCCCCCC es numero de cuenta
+  // xxxx es cen o cuy sin comillas
+
+  nombreFinal := fmt.Sprintf("fact-ecogas-%s-%s-%s-%s",consultaBase.Get("prefijoComprobante"),consultaBase.Get("numeroComprobante"),resultadoBase.Get("cuenta"),resultadoBase.Get("distribuidora"))
   //w.Header().Set("Content-Disposition", "attachment; filename="+resultadoBase.Get("nombre"))
-  w.Header().Set("Content-Disposition", "inline; filename="+resultadoBase.Get("nombre"))
+  w.Header().Set("Content-Disposition", "inline; filename="+nombreFinal)
   w.Header().Set("Content-Type", "application/pdf")
   resp.Write(w)
   defer resp.Body.Close()
