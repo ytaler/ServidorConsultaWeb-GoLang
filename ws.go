@@ -16,13 +16,19 @@ import (
   //"bytes"
 )
 
-// te dirijo a 10.0.0.1!
-// Error: "Failed to connect to 192.168.1.37 port 8081: Connection refused" - Code: 7
-// http://192.168.1.37:8080/balance/balance.php?consultaBase.Get("numeroComprobante")=14265747&consultaBase.Get("prefijoComprobante")=0211&consultaBase.Get("tipoComprobante")=B
+// Mail a ecogas
+// * Consulta de existencia de comprobante
+// http://10.2.1.221:8082/balance/consulta.php?p=0210&d=00297381&c=140692&t=cen&e=1
+// * Extracción de comprobante:
+// http://10.2.1.221:8082/balance/balance.php?d=00297381&p=0210&c=140692&t=cen&o=si
+// d --> cuenta
+// p --> prefijo
+// c --> cuenta
+// t --> distribuidora: cen/cuy
+// e --> existe: 1/0
+// o --> observaciones: nof=no lleva fondo, resto con fondo.
 
-// http://localhost:8080/balance/balance?consultaBase.Get("numeroComprobante")=32541040&consultaBase.Get("prefijoComprobante")=0001&consultaBase.Get("tipoComprobante")=A
-
-// http://localhost:8080/balance/balance?consultaBase.Get("numeroComprobante")=00033824&consultaBase.Get("prefijoComprobante")=0216&consultaBase.Get("tipoComprobante")=A
+// http://localhost:8082/balance/balance.php?d=32541040&p=0001&c=12345678&t=cen&o=si
 
 // Consulta PPRESS
 // http://192.168.1.230:8081/prueba?nombre=Cordobesa.pdf&pagina=300&periodo=2018\08\&ruta=PDF\&servidor=\\192.168.1.230\
@@ -38,21 +44,22 @@ var (
   conn *sql.DB
   err error
   servidorPPress= "http://192.168.1.230:8081/prueba"
-  puertoHttp    = ":8080"
+  puertoHttp    = ":8082"
 )
 
-var validPath = regexp.MustCompile("^/(balance/balance)$")
+var pathBalance = regexp.MustCompile("^/(balance/balance.php)$")
+var pathConsulta = regexp.MustCompile("^/(balance/consulta.php)$")
 
 func balanceador(w http.ResponseWriter, r *http.Request) {
   //fmt.Fprintf(w, "<html><head><title>Servicio de consulta masiva de comprobantes</title></head></html>")
   if *debug {
-    fmt.Printf("%s\n",time.Now())
+    fmt.Printf("Hora inicio: %s\n",time.Now())
   }
 
   consultaBase := url.Values{}
   resultadoBase := url.Values{}
   // verificacion de path url, si no es corecto, retorna http 403
-  m := validPath.FindStringSubmatch(r.URL.Path)
+  m := pathBalance.FindStringSubmatch(r.URL.Path)
   //print(r.URL.Path)
   if m == nil {
     http.NotFound(w, r)
@@ -65,17 +72,22 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  consultaBase.Set("numeroComprobante",r.FormValue("num_comp"))
-  consultaBase.Set("prefijoComprobante",r.FormValue("pre_comp"))
-  consultaBase.Set("tipoComprobante",r.FormValue("tip_comp"))
-
-  //debug := "Parametros recibidos: " + consultaBase.Get("numeroComprobante") + " " + consultaBase.Get("prefijoComprobante") + " " + consultaBase.Get("tipoComprobante") + " - Bolilla " + fmt.Sprintf("%d",bolilla)
+  consultaBase.Set("numeroComprobante",r.FormValue("d"))
+  consultaBase.Set("prefijoComprobante",r.FormValue("p"))
+  consultaBase.Set("cuentaComprobante",r.FormValue("c"))
+  if r.FormValue("t") == "cen"{
+  	consultaBase.Set("distribuidoraComprobante","C")
+  }else{
+  	consultaBase.Set("distribuidoraComprobante","Y")
+  }
+  consultaBase.Set("observacionesComprobante",r.FormValue("o"))
 
   // COLUMNAS BASE
   // servidor,ruta,distribuidora,preriodo,nombre_archivo,prefijo_comp,numero_comp,tipo_comp,fomulario,numero_cta,pagina,time_factura
-  query := "select servidor, ruta, distribuidora, preriodo, nombre_archivo, numero_cta, pagina from Indices where prefijo_comp='"+ consultaBase.Get("prefijoComprobante") +"' and numero_comp='"+ consultaBase.Get("numeroComprobante") +"' and tipo_comp='" + consultaBase.Get("tipoComprobante") + "'"
-  //query := "select servidor, ruta, preriodo, nombre_archivo from Indices where prefijo_comp='0216' and numero_comp='00033824' and tipo_comp='A'"
-  //print(query)
+  query := "select servidor, ruta, preriodo, nombre_archivo, pagina from Indices where prefijo_comp='"+ consultaBase.Get("prefijoComprobante") +"' and numero_comp='"+ consultaBase.Get("numeroComprobante") +"' and distribuidora='" + consultaBase.Get("distribuidoraComprobante") + "'"
+  if *debug {
+    fmt.Printf("Consulta: %s\n",query)
+  }
   stmt, err := conn.Prepare(query)
   if err != nil {
     //log.Fatal("Prepare failed:", err.Error())
@@ -94,13 +106,11 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   var servidor string
   var ruta string
-  var distribuidora string
   var periodo string
   var nombre string
-  var cuenta string
   var pagina int
   
-  err = row.Scan(&servidor, &ruta, &distribuidora, &periodo, &nombre, &cuenta, &pagina)
+  err = row.Scan(&servidor, &ruta, &periodo, &nombre, &pagina)
   if err != nil {
     //log.Fatal("Scan failed:", err.Error())
     http.NotFound(w, r)
@@ -115,19 +125,23 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
 
   resultadoBase.Set("servidor",servidor)
   resultadoBase.Set("ruta",ruta)
-  if distribuidora == "C"{
-  	resultadoBase.Set("distribuidora","cen")
-  }else{
-	resultadoBase.Set("distribuidora","cuy")
-  }
   resultadoBase.Set("periodo",periodo)
   resultadoBase.Set("nombre",nombre)
-  resultadoBase.Set("cuenta",cuenta)
   resultadoBase.Set("pagina",strconv.Itoa(pagina))
 
   if *debug {
-    fmt.Printf("Archivo: %s%s%s%s Pagina:%s", resultadoBase.Get("servidor"), resultadoBase.Get("ruta"), resultadoBase.Get("periodo"), resultadoBase.Get("nombre"), resultadoBase.Get("pagina"))
-    fmt.Printf(" tipo=%s, prefijo=%s, numero=%s, bolilla=%d\n", consultaBase.Get("tipoComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), *bolilla)
+    // consultaBase["numeroComprobante"] <--> r.FormValue("d")
+    // consultaBase["prefijoComprobante"] <--> r.FormValue("p")
+    // consultaBase["cuentaComprobante"] <--> r.FormValue("c")
+    // consultaBase["distribuidoraComprobante"] <--> r.FormValue("t") / cen (c)- cuy (y)
+    // consultaBase["observacionesComprobante"] <--> r.FormValue("o")
+    fmt.Printf("Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, observaciones=%s, bolilla=%d\n", consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("distribuidoraComprobante"), *bolilla)
+    // resultadoBase["servidor"] <--> servidor
+    // resultadoBase["ruta"] <--> ruta
+    // resultadoBase["periodo"] <--> periodo
+    // resultadoBase["nombre"] <--> nombre
+    // resultadoBase["pagina"] <--> pagina
+    fmt.Printf("Datos Base: archivo=%s%s%s%s, pagina=%s\n", resultadoBase.Get("servidor"), resultadoBase.Get("ruta"), resultadoBase.Get("periodo"), resultadoBase.Get("nombre"), resultadoBase.Get("pagina"))
   }
   resp, err := http.PostForm(servidorPPress, resultadoBase)
 
@@ -149,7 +163,7 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
   // CCCCCCCC es numero de cuenta
   // xxxx es cen o cuy sin comillas
 
-  nombreFinal := fmt.Sprintf("fact-ecogas-%s-%s-%s-%s",consultaBase.Get("prefijoComprobante"),consultaBase.Get("numeroComprobante"),resultadoBase.Get("cuenta"),resultadoBase.Get("distribuidora"))
+  nombreFinal := fmt.Sprintf("fact-ecogas-%s-%s-%s-%s",consultaBase.Get("prefijoComprobante"),consultaBase.Get("numeroComprobante"),consultaBase.Get("cuentaComprobante"),consultaBase.Get("distribuidoraComprobante"))
   //w.Header().Set("Content-Disposition", "attachment; filename="+resultadoBase.Get("nombre"))
   w.Header().Set("Content-Disposition", "inline; filename="+nombreFinal)
   w.Header().Set("Content-Type", "application/pdf")
@@ -166,7 +180,7 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
     *bolilla = 1
   }
   if *debug {
-    fmt.Printf("%s\n",time.Now())
+    fmt.Printf("Hora finalizacion: %s\n",time.Now())
   }
 }
 
