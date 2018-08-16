@@ -1,0 +1,5 @@
+# no subir 7z que contiene el src necesario para funcionar
+*.7z
+
+# no subir ejecutable compilado (linux)
+ws
