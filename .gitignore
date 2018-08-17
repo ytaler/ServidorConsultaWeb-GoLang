@@ -3,3 +3,6 @@
 
 # no subir ejecutable compilado (linux)
 ws
+
+# no subir archivo con notas
+info.txt
