@@ -3,6 +3,10 @@
 
 # no subir ejecutable compilado (linux)
 ws
+# no subir ejecutable compilado (windows)
+ws.exe
 
 # no subir archivo con notas
 info.txt
+ws.json
+
