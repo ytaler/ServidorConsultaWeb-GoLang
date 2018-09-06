@@ -50,35 +50,43 @@ var (
   servidorPPress = []string{"NULO PARA CORREGIR DEFASAJE INDICES","http://cpl-printw01:8080/extraer_pdf","http://cpl-printw02:8080/extraer_pdf","http://cpl-printw01:8080/extraer_pdf","http://cpl-printw02:8080/extraer_pdf"}
   bolilla int = 1
   wsDebug bool = false
-  pathBalance = regexp.MustCompile("^/(balance/balance.php)$")
-  pathConsulta = regexp.MustCompile("^/(consulta/consulta.php)$")
+  pathBalance = regexp.MustCompile("^/(balance/balance)$")
+  pathConsulta = regexp.MustCompile("^/(consulta/consulta)$")
+  pathControl = regexp.MustCompile("^/(control/control)$")
 )
 
+func incrementarBolilla(){
+  // incremento del valor de bolilla para distribucion de carga
+  bolilla += 1
+  if (bolilla >= 5)||(bolilla < 1){
+    bolilla = 1
+  }
+}
 
 func balanceador(w http.ResponseWriter, r *http.Request) {
   mensajeError := ""
   //fmt.Fprintf(w, "<html><head><title>Servicio de consulta masiva de comprobantes</title></head></html>")
   if wsDebug {
-    print("********************************************************************************\n")
-    fmt.Printf("%s.info(2): Hora inicio balance: %s\n", svcName,time.Now())
-    out.LogString(fmt.Sprintf("********************************************************************************"))
-    out.LogString(fmt.Sprintf("%s.info(2): Hora inicio balance: %s", svcName,time.Now()))
+    mensajeError = fmt.Sprintf("********************************************************************************\n\t%s.info(2): Inicio balance", svcName) 
+    fmt.Printf("%s %s\n", mensajeError,time.Now())
+    out.LogString(mensajeError)
   }
   consultaBase := url.Values{}
   resultadoBase := url.Values{}
   // verificacion de path url, si no es corecto, retorna http 403
-  m := pathBalance.FindStringSubmatch(r.URL.Path)
-  if m == nil{
-    mensajeError = fmt.Sprintf(" BAD REQUEST - Path=%s - bolilla=%d", r.URL.Path, bolilla)
+  mB := pathBalance.FindStringSubmatch(r.URL.Path)
+  if mB == nil{
+    mensajeError = fmt.Sprintf("%s.info(2): BAD REQUEST - Path=%s - bolilla=%d", svcName, r.URL.Path, bolilla)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug {
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s", svcName, mensajeError))
-    w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
+  out.LogString(mensajeError)
+    w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))
+  incrementarBolilla()
     return
   }
   // variables utilizadas para consulta en base
@@ -94,22 +102,24 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
   // se arma la variable que contiene la consulta
   query := "Exec ExtraePDF '" + consultaBase.Get("prefijoComprobante") + "','" + consultaBase.Get("numeroComprobante") + "','" + consultaBase.Get("cuentaComprobante") + "','" + consultaBase.Get("distribuidoraComprobante") + "'"
   if wsDebug {
-    fmt.Printf("%s.info(2): Consulta: %s\n", svcName, query)
-	out.LogString(fmt.Sprintf("%s.info(2): Consulta: %s", svcName, query))
+    mensajeError = fmt.Sprintf("%s.info(2): Consulta: %s", svcName, query)
+  fmt.Printf("%s\n",mensajeError)
+  out.LogString(mensajeError)
   }
   // se prepara la query
   stmt, err := conn.Prepare(query)
   if err != nil{
-    mensajeError = fmt.Sprintf(" Error al preparar query SQL - Path=%s - bolilla=%d\n Detalle:%s", r.URL.Path, bolilla, err.Error())
+    mensajeError = fmt.Sprintf("%s.info(2): Error al preparar query SQL - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug{
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s", svcName, mensajeError))
+  out.LogString(mensajeError)
     w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
+  incrementarBolilla()
     return
   }
   defer stmt.Close()
@@ -131,16 +141,17 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
   // scan realiza un parseo de la respuesta y asigna los valores a las variables
   err = row.Scan(&servidor, &ruta, &distribuidora, &periodo, &nombre, &prefijo_comp, &numero_comp, &tipo_comp, &formulario, &numero_cta, &pagina, &time_factura)
   if err != nil {
-    mensajeError = fmt.Sprintf(" Error al parsear resultado query SQL - Path=%s - bolilla=%d\n Detalle:%s", r.URL.Path, bolilla, err.Error())
+    mensajeError = fmt.Sprintf("%s.info(2): Error al parsear resultado query SQL - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug {
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s", svcName, mensajeError))
-    w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
+  out.LogString(mensajeError)
+    w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))
+  incrementarBolilla()
     return
   }
 
@@ -159,31 +170,32 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
     // consultaBase["cuentaComprobante"] <--> r.FormValue("c")
     // consultaBase["distribuidoraComprobante"] <--> r.FormValue("t") / cen (c)- cuy (y)
     // consultaBase["observacionesComprobante"] <--> r.FormValue("o")
-    fmt.Printf("%s.info(2): Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, observaciones=%s, bolilla=%d\n", svcName, consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("observacionesComprobante"), bolilla)
-    out.LogString(fmt.Sprintf("%s.info(2): Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, observaciones=%s, bolilla=%d", svcName, consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("observacionesComprobante"), bolilla))	
+  mensajeError = fmt.Sprintf("%s.info(2): Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, observaciones=%s, bolilla=%d\n\t", svcName, consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("observacionesComprobante"), bolilla)
     // resultadoBase["servidor"] <--> servidor
     // resultadoBase["ruta"] <--> ruta
     // resultadoBase["periodo"] <--> periodo
     // resultadoBase["nombre"] <--> nombre
     // resultadoBase["pagina"] <--> pagina
-    fmt.Printf("%s.info(2): Datos Base: archivo=%s%s%s%s, pagina=%s\n", svcName, resultadoBase.Get("servidor"), resultadoBase.Get("ruta"), resultadoBase.Get("periodo"), resultadoBase.Get("nombre"), resultadoBase.Get("pagina"))
-    out.LogString(fmt.Sprintf("%s.info(2): Datos Base: archivo=%s%s%s%s, pagina=%s", svcName, resultadoBase.Get("servidor"), resultadoBase.Get("ruta"), resultadoBase.Get("periodo"), resultadoBase.Get("nombre"), resultadoBase.Get("pagina")))	
+  mensajeError = mensajeError + fmt.Sprintf("%s.info(2): Datos Base: archivo=%s%s%s%s, pagina=%s", svcName, resultadoBase.Get("servidor"), resultadoBase.Get("ruta"), resultadoBase.Get("periodo"), resultadoBase.Get("nombre"), resultadoBase.Get("pagina"))
+    fmt.Printf("%s\n", mensajeError)
+    out.LogString(mensajeError) 
   }
 
   // Post con formulario a PPress. Se le pasa 
   resp, err := http.PostForm(servidorPPress[bolilla], resultadoBase)
   // El codigo 200 es Ok
   if (err != nil) || (resp.StatusCode != 200) {
-    mensajeError = fmt.Sprintf(" Error de comunicacion con PPress - Path=%s - bolilla=%d\n Detalle:%s", r.URL.Path, bolilla, err.Error())
+    mensajeError = fmt.Sprintf("%s.info(2):  Error de comunicacion con PPress - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug {
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s\n", svcName, mensajeError))
+  out.LogString(mensajeError)
     w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
+  incrementarBolilla()
     return
   }
   // FORMATO DE NOMBRE ARCHIVO
@@ -202,14 +214,11 @@ func balanceador(w http.ResponseWriter, r *http.Request) {
   // la respuesta se copia directamente lo que responde del postform ppress 
   resp.Write(w)
   defer resp.Body.Close()
-  // incremento del valor de bolilla para distribucion de carga
-  bolilla += 1
-  if (bolilla >= 5)||(bolilla < 1){
-    bolilla = 1
-  }
+  incrementarBolilla()
   if wsDebug {
-    fmt.Printf("%s.info(2): Hora finalizacion balance: %s\n", svcName, time.Now())
-	out.LogString(fmt.Sprintf("%s.info(2): Hora finalizacion balance: %s", svcName, time.Now()))
+    mensajeError = fmt.Sprintf("%s.info(2): Finalizacion balance", svcName)
+    fmt.Printf(" %s\n", mensajeError, time.Now())
+  out.LogString(mensajeError)
   }
 }
 
@@ -217,24 +226,23 @@ func consultador(w http.ResponseWriter, r *http.Request) {
   mensajeError := ""
   //fmt.Fprintf(w, "<html><head><title>Servicio de consulta masiva de comprobantes</title></head></html>")
   if wsDebug {
-    print("********************************************************************************\n")
-    fmt.Printf("%s.info(2): Hora inicio consulta: %s\n", svcName, time.Now())
-    out.LogString(fmt.Sprintf("********************************************************************************"))
-    out.LogString(fmt.Sprintf("%s.info(2): Hora inicio consulta: %s", svcName, time.Now()))
+    mensajeError = fmt.Sprintf("********************************************************************************\n\t%s.info(2): Inicio consulta", svcName)  
+    fmt.Printf("%s %s\n", mensajeError,time.Now())
+    out.LogString(mensajeError)
   }
   consultaBase := url.Values{}
   // verificacion de path url, si no es corecto, retorna http 403
-  m := pathConsulta.FindStringSubmatch(r.URL.Path)
-  if m == nil {
-    mensajeError = fmt.Sprintf(" BAD REQUEST - Path=%s - bolilla=%d\n Detalle:%s", r.URL.Path, bolilla, err.Error())
+  mC := pathConsulta.FindStringSubmatch(r.URL.Path)
+  if mC == nil {
+    mensajeError = fmt.Sprintf("%s.info(2): BAD REQUEST - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug{
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s", svcName, mensajeError))
+  out.LogString(mensajeError)
     w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
     return
   }  
@@ -252,21 +260,22 @@ func consultador(w http.ResponseWriter, r *http.Request) {
   // se arma la variable que contiene la consulta
   query := "Exec ConsultaExiste '"+ consultaBase.Get("prefijoComprobante") +"','"+ consultaBase.Get("numeroComprobante") +"','"+ consultaBase.Get("cuentaComprobante") +"','" + consultaBase.Get("distribuidoraComprobante") + "'"
   if wsDebug{
-    fmt.Printf("%s.info(2): Consulta: %s\n", svcName, query)
-	out.LogString(fmt.Sprintf("%s.info(2): Consulta: %s", svcName, query))
+    mensajeError = fmt.Sprintf("%s.info(2): Consulta = %s", svcName, query)
+    fmt.Printf("%s\n", mensajeError)
+  out.LogString(mensajeError)
   }
   // se prepara la query
   stmt, err := conn.Prepare(query)
   if err != nil{
-    mensajeError = fmt.Sprintf(" Error al preparar query SQL - Path=%s - bolilla=%d\n Detalle:%s", r.URL.Path, bolilla, err.Error())
+    mensajeError = fmt.Sprintf("%s.info(2): Error al preparar query SQL - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug{
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s", svcName, mensajeError))
+  out.LogString(mensajeError)
     w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
     return
   }  
@@ -278,15 +287,15 @@ func consultador(w http.ResponseWriter, r *http.Request) {
   // scan realiza un parseo de la respuesta y asigna los valores a las variables
   err = row.Scan(&respuesta)
   if err != nil {
-    mensajeError = fmt.Sprintf(" Error al parsear resultado query SQL - Path=%s - bolilla=%d\n Detalle:%s", r.URL.Path, bolilla, err.Error())
+    mensajeError = fmt.Sprintf("%s.info(2): Error al parsear resultado query SQL - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
     r.ParseForm()
     for key, values := range r.Form {
         mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
     }
     if wsDebug {
-      fmt.Printf("%s.info(2): %s\n", svcName, mensajeError)
+      fmt.Printf("%s\n", mensajeError)
     }
-	out.LogString(fmt.Sprintf("%s.info(2): %s", svcName, mensajeError))
+  out.LogString(mensajeError)
     w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
     return
   }  
@@ -297,27 +306,58 @@ func consultador(w http.ResponseWriter, r *http.Request) {
     // consultaBase["cuentaComprobante"] <--> r.FormValue("c")
     // consultaBase["distribuidoraComprobante"] <--> r.FormValue("t") / cen (c)- cuy (y)
     // consultaBase["observacionesComprobante"] <--> r.FormValue("o")
-    fmt.Printf("%s.info(2): Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, existe=%s, bolilla=%d\n", svcName, consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("existeComprobante"), bolilla)
-	out.LogString(fmt.Sprintf("%s.info(2): Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, existe=%s, bolilla=%d", svcName, consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("existeComprobante"), bolilla))
+  mensajeError = fmt.Sprintf("%s.info(2): Datos HTTP: cuenta=%s, prefijo=%s, numero=%s, distribuidora=%s, existe=%s, bolilla=%d\n\t", svcName, consultaBase.Get("cuentaComprobante"), consultaBase.Get("prefijoComprobante"), consultaBase.Get("numeroComprobante"), consultaBase.Get("distribuidoraComprobante"), consultaBase.Get("existeComprobante"), bolilla)
     // resultadoBase["servidor"] <--> servidor
-    fmt.Printf("%s.info(2): Datos Base: respuesta=%s\n", svcName, respuesta)
-	out.LogString(fmt.Sprintf("%s.info(2): Datos Base: respuesta=%s", svcName, respuesta))
+  mensajeError = mensajeError + fmt.Sprintf("%s.info(2): Datos Base: respuesta=%s", svcName, respuesta)
+    fmt.Printf("%s\n", mensajeError)
+  out.LogString(mensajeError)
   }  
   // respuesta si existe o no el comprobante directamente de la respuesta SQL
   w.Write([]byte(respuesta))
   if wsDebug{
-    fmt.Printf("%s.info(2): Hora finalizacion consulta: %s\n", svcName, time.Now())
-	out.LogString(fmt.Sprintf("%s.info(2): Hora finalizacion consulta: %s", svcName, time.Now()))
+    mensajeError = fmt.Sprintf("%s.info(2): Finalizacion consulta", svcName)
+    fmt.Printf(" %s\n", mensajeError, time.Now())
+  out.LogString(mensajeError)
   }
+}
+
+func control(w http.ResponseWriter, r *http.Request) {
+  mensajeError := ""
+  mensajeError = fmt.Sprintf("%s.info(2): Inicio control", svcName)
+  fmt.Printf(" %s\n", mensajeError, time.Now())
+  out.LogString(mensajeError)
+
+  // verificacion de path url, si no es corecto, retorna http 403
+  mC := pathControl.FindStringSubmatch(r.URL.Path)
+  if mC == nil {
+    mensajeError = fmt.Sprintf("%s.info(2): BAD REQUEST - Path=%s - bolilla=%d - Detalle:%v", svcName, r.URL.Path, bolilla, err)
+    r.ParseForm()
+    for key, values := range r.Form {
+        mensajeError = mensajeError + fmt.Sprintf(" - %s: %s", key,values)
+    }
+    if wsDebug{
+      fmt.Printf("%s\n", mensajeError)
+    }
+  out.LogString(mensajeError)
+    w.Write([]byte("<html><head><title>Servicio de consulta masiva de comprobantes</title></head><body>"+mensajeError+"</body></html>"))  
+    return
+  }  
+  if r.FormValue("debug") == "si"{
+    wsDebug = !wsDebug
+  mensajeError = fmt.Sprintf("El valor de debug ahora es: %v",wsDebug)
+  out.LogString(mensajeError)
+    w.Write([]byte(mensajeError))
+  }
+  
+  mensajeError = fmt.Sprintf("%s.info(2): Finalizacion control", svcName)
+  fmt.Printf(" %s\n", mensajeError, time.Now())
+  out.LogString(mensajeError)
 }
 
 func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {
   out.LogString("Inicio Execute")
   const cmdsAccepted = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPauseAndContinue
   changes <- svc.Status{State: svc.StartPending}
-  fasttick := time.Tick(500 * time.Millisecond)
-  slowtick := time.Tick(2 * time.Second)
-  tick := fasttick
   changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
   elog.Info(1, strings.Join(args, "-"))
   
@@ -338,15 +378,15 @@ func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes c
     fmt.Printf("%s.info(2): user:%s\n",svcName, jsontype.Config.User)
     fmt.Printf("%s.info(2): database:%s\n",svcName, jsontype.Config.Database)
     fmt.Printf("%s.info(2): bolilla inicial:%d\n",svcName, bolilla)
+
+    out.LogString(fmt.Sprintf("%s.info(2): password:%s",svcName, jsontype.Config.Password))
+    out.LogString(fmt.Sprintf("%s.info(2): sql port:%d",svcName, jsontype.Config.Port))
+    out.LogString(fmt.Sprintf("%s.info(2): http port:%d",svcName, jsontype.Config.HttpPort))
+    out.LogString(fmt.Sprintf("%s.info(2): server:%s",svcName, jsontype.Config.Server))
+    out.LogString(fmt.Sprintf("%s.info(2): user:%s",svcName, jsontype.Config.User))
+    out.LogString(fmt.Sprintf("%s.info(2): database:%s",svcName, jsontype.Config.Database))
+    out.LogString(fmt.Sprintf("%s.info(2): bolilla inicial:%d",svcName, bolilla))
   }
-  
-  out.LogString(fmt.Sprintf("%s.info(2): password:%s",svcName, jsontype.Config.Password))
-  out.LogString(fmt.Sprintf("%s.info(2): sql port:%d",svcName, jsontype.Config.Port))
-  out.LogString(fmt.Sprintf("%s.info(2): http port:%d",svcName, jsontype.Config.HttpPort))
-  out.LogString(fmt.Sprintf("%s.info(2): server:%s",svcName, jsontype.Config.Server))
-  out.LogString(fmt.Sprintf("%s.info(2): user:%s",svcName, jsontype.Config.User))
-  out.LogString(fmt.Sprintf("%s.info(2): database:%s",svcName, jsontype.Config.Database))
-  out.LogString(fmt.Sprintf("%s.info(2): bolilla inicial:%d",svcName, bolilla))
 
   go func(){
     out.LogString("Inicio Http Thread")
@@ -354,11 +394,11 @@ func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes c
 
     if wsDebug{
       fmt.Printf("%s.info(2): connString:%s\n", svcName, connString)
-    }
     out.LogString(fmt.Sprintf("%s.info(2): connString:%s", svcName, connString))
+    }
     conn, err = sql.Open("mssql", connString)
     if err != nil {
-	  out.LogString(fmt.Sprintf("No se pudo abrir la conexion a la BD: %v", err))
+    out.LogString(fmt.Sprintf("No se pudo abrir la conexion a la BD: %v", err))
       log.Fatal("No se pudo abrir la conexion a la BD:", err.Error())
     }
     defer conn.Close() // cierra la conexion al final de la ejecucion del main
@@ -373,57 +413,56 @@ func (m *myservice) Execute(args []string, r <-chan svc.ChangeRequest, changes c
     if wsDebug{
       fmt.Printf("%s.info(0): starting balanceador handler\n", svcName)
     }
-	out.LogString(fmt.Sprintf("%s.info(0): starting balanceador handler", svcName))
+  out.LogString(fmt.Sprintf("%s.info(0): starting balanceador handler", svcName))
     http.HandleFunc("/balance/", balanceador)
     if wsDebug{
       fmt.Printf("%s.info(0): starting consultador handler\n", svcName)
     }
-	out.LogString(fmt.Sprintf("%s.info(0): starting consultador handler", svcName))
+  out.LogString(fmt.Sprintf("%s.info(0): starting consultador handler", svcName))
     http.HandleFunc("/consulta/", consultador)
     if wsDebug{
+      fmt.Printf("%s.info(0): starting control handler\n", svcName)
+    }    
+  out.LogString(fmt.Sprintf("%s.info(0): starting control handler", svcName))
+    http.HandleFunc("/control/", control)
+    if wsDebug{
       fmt.Printf("%s.info(0): starting http server\n", svcName)
-    }
-    out.LogString(fmt.Sprintf("%s.info(0): starting http server", svcName))
+    }   
+  out.LogString(fmt.Sprintf("%s.info(0): starting http server", svcName))
     if err := http.ListenAndServe(":"+fmt.Sprintf("%d",jsontype.Config.HttpPort), nil); err != nil {
-	  out.LogString(fmt.Sprintf("Error al iniciar http listener: %v", err))
+    out.LogString(fmt.Sprintf("Error al iniciar http listener: %v", err))
       panic(err)
     }
-	out.LogString("Fin Http Thread")
+  out.LogString("Fin Http Thread")
   }()
-  
-  
-loop:
-  for {
-    select {
-     case <-tick:
-       // nada
-     case c := <-r:
+    
+  loop:
+    for {
+      c := <-r
       switch c.Cmd {
-      case svc.Interrogate:
-        changes <- c.CurrentStatus
-        // Testing deadlock from https://code.google.com/p/winsvc/issues/detail?id=4
-        time.Sleep(100 * time.Millisecond)
-        changes <- c.CurrentStatus
-      case svc.Stop, svc.Shutdown:
-        break loop
-      case svc.Pause:
-        changes <- svc.Status{State: svc.Paused, Accepts: cmdsAccepted}
-        tick = slowtick
-      case svc.Continue:
-        changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
-        tick = fasttick
-      default:
-        elog.Error(1, fmt.Sprintf("unexpected control request #%d", c))
+        case svc.Interrogate:
+          changes <- c.CurrentStatus
+          // Testing deadlock from https://code.google.com/p/winsvc/issues/detail?id=4
+          time.Sleep(100 * time.Millisecond)
+          changes <- c.CurrentStatus
+        case svc.Stop, svc.Shutdown:
+          break loop
+        case svc.Pause:
+          changes <- svc.Status{State: svc.Paused, Accepts: cmdsAccepted}
+        case svc.Continue:
+          changes <- svc.Status{State: svc.Running, Accepts: cmdsAccepted}
+        default:
+          elog.Error(1, fmt.Sprintf("unexpected control request #%d", c))
+        out.LogString(fmt.Sprintf("unexpected control request #%d", c))
       }
     }
-  }
   changes <- svc.Status{State: svc.StopPending}
   out.LogString("Fin Execute")
   return
 }
 
 func runService(name string, isDebug bool) {  
-  out.LogString(fmt.Sprintf("Inicio runService, servicio: %s, debug: %s",name, isDebug))
+  out.LogString(fmt.Sprintf("Inicio runService, servicio: %s, debug: %v",name, isDebug))
   if isDebug {
     elog = debug.New(name)
   } else {
@@ -513,7 +552,7 @@ func installService(name, dispName string) error {
   err = eventlog.InstallAsEventCreate(name, eventlog.Error|eventlog.Warning|eventlog.Info)
   if err != nil {
     s.Delete()
-	out.LogString(fmt.Sprintf("SetupEventLogSource() failed: %s", err))	
+  out.LogString(fmt.Sprintf("SetupEventLogSource() failed: %s", err)) 
     return fmt.Errorf("SetupEventLogSource() failed: %s", err)
   }
   out.LogString("Fin installService")
@@ -593,13 +632,13 @@ func controlService(name string, c svc.Cmd, to svc.State) error {
   timeout := time.Now().Add(10 * time.Second)
   for status.State != to {
     if timeout.Before(time.Now()) {
-	  out.LogString(fmt.Sprintf("timeout waiting for service to go to state=%d", to))
+    out.LogString(fmt.Sprintf("timeout waiting for service to go to state=%d", to))
       return fmt.Errorf("timeout waiting for service to go to state=%d", to)
     }
     time.Sleep(300 * time.Millisecond)
     status, err = s.Query()
     if err != nil {
-	  out.LogString(fmt.Sprintf("could not retrieve service status: %v", err))
+    out.LogString(fmt.Sprintf("could not retrieve service status: %v", err))
       return fmt.Errorf("could not retrieve service status: %v", err)
     }
   }
